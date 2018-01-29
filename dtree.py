@@ -54,6 +54,7 @@ class DecisionTree:
                 attrs = attrs[attrs != optimal_feature]
                 for feature_value, matching_instances in split:
                     child = Node()
+                    child.parent = node
                     node.children[feature_value] = child
                     stack.append((child, attrs, matching_instances))
 
@@ -63,6 +64,7 @@ class DecisionTree:
                     mode = instances[label].mode()[0]
                     for feature_value in left_values:
                         child = Node()
+                        child.parent = node
                         child.leaf = True
                         child.label = mode
                         node.children[feature_value] = child
@@ -160,7 +162,9 @@ class Node:
         self.leaf = True
         self.label = None
         self.attribute = None
+        self.parent = None
         self.children = {}  # value -> Node
+        self.instances = None
         
         
     def __repr__(self):
