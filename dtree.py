@@ -54,8 +54,14 @@ class DecisionTree:
                     node.children[feature_value] = child
     
     
-    def predict(self, data: pd.DataFrame):
-        pass
+    def predict(self, data: pd.DataFrame) -> List[object]:
+        predictions = []
+        for _, row in data.iterrows():
+            node = self.root
+            while not node.leaf:
+                node = node.children[row[node.attribute]]
+            predictions.append(node.label)
+        return predictions
     
     
     def max_info_gain(self, data: pd.DataFrame, attrs: Iterable[str], label: str) -> Tuple[float, str, pd.core.groupby.GroupBy]:
