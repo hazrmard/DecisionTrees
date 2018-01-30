@@ -28,43 +28,44 @@ class DecisionTree:
         """
         features = data.columns[data.columns != label]
         values = {feature: data[feature].unique() for feature in features}
-        stack = [(self.root, features, data)]
+        stack = [(self.root, features)]
+        self.root.instances = data
         
         err_hist = {name:[] for name in validation.keys()}
 
         while len(stack) != 0:
-            node, attrs, instances = stack.pop()
+            node, attrs = stack.pop()
             
             # if the current data labels are homogenous, create label
-            if self.entropy(instances, label) == 0.0:
+            if self.entropy(node.instances, label) == 0.0:
                 node.leaf = True
-                node.label = instances[label].iloc[0]
+                node.label = node.instances[label].iloc[0]
             
             # if there are no more attributes left to split on, create label based on popularity
             elif len(attrs) == 0:
                 node.leaf = True
-                node.label = instances[label].mode().iloc[0]
+                node.label = node.instances[label].mode().iloc[0]
             
             else:
-                info_gain, optimal_feature, split = self.max_info_gain(instances, attrs, label)
+                info_gain, optimal_feature, split = self.max_info_gain(node.instances, attrs, label)
                 node.attribute = optimal_feature
                 node.leaf = False
+                node.label = node.instances[label].mode().iloc[0]  # non-leaf label only used during pruning
 
                 # for attribute values with matching instances, add them to stack to calculate information
                 attrs = attrs[attrs != optimal_feature]
                 for feature_value, matching_instances in split:
                     child = Node()
-                    child.parent = node
+                    child.instances = matching_instances
                     node.children[feature_value] = child
-                    stack.append((child, attrs, matching_instances))
+                    stack.append((child, attrs))
 
                 # for attribute values with no matching instnces, create label based on popularity
                 left_values = values[optimal_feature][~np.isin(values[optimal_feature], list(split.groups.keys()))]
                 if len(left_values) > 0:
-                    mode = instances[label].mode()[0]
+                    mode = node.instances[label].mode().iloc[0]
                     for feature_value in left_values:
                         child = Node()
-                        child.parent = node
                         child.leaf = True
                         child.label = mode
                         node.children[feature_value] = child
@@ -75,6 +76,38 @@ class DecisionTree:
                 hist.append(error)
         
         return err_hist
+    
+    
+    def prune(self, validation: pd.DataFrame, label: str):
+        """
+        Iteratively prunes nodes from the decision tree until performance degrades.
+        """
+        nodes = []           # non-leaf nodes
+        stack = [self.root]  # stack of nodes to check
+        while len(stack) != 0:
+            node = stack.pop()
+            if not node.leaf:
+                nodes.append(node)
+            for _, child in node.children.items():
+                stack.append(child)
+        
+        while True:        
+            score = (self.predict(validation) == validation[label]).sum()
+            pruned_scores = np.zeros(len(nodes))
+
+            # iterate over non-leaf nodes, make them leaf to get pruned scores
+            for i, node in enumerate(nodes):
+                node.leaf = True
+                pruned_scores[i] = (self.predict(validation) == validation[label]).sum()
+                node.leaf = False
+            # find best pruned score, if matches original score, prune node
+            best = np.argmax(pruned_scores)
+            if best >= score:
+                nodes[best].leaf = True
+                nodes.pop(best)
+            # if best pruned score cannot match original score, stop
+            else:
+                return 1. - score / len(validation)
     
     
     def predict(self, data: pd.DataFrame) -> List[Any]:
@@ -159,12 +192,11 @@ class Node:
     """
     
     def __init__(self):
-        self.leaf = True
-        self.label = None
-        self.attribute = None
-        self.parent = None
-        self.children = {}  # value -> Node
-        self.instances = None
+        self.leaf = True        # bool
+        self.label = None       # Any
+        self.attribute = None   # str
+        self.children = {}      # value -> Node
+        self.instances = None   # pd.DataFrame
         
         
     def __repr__(self):
