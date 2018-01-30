@@ -78,9 +78,24 @@ class DecisionTree:
         return err_hist
     
     
-    def prune(self, validation: pd.DataFrame, label: str):
+    def prune(self, validation: pd.DataFrame, label: str, *data: List[pd.DataFrame]) -> List[List[float]]:
         """
-        Iteratively prunes nodes from the decision tree until performance degrades.
+        Iteratively prunes nodes from the decision tree until performance degrades. At each iteration,
+        all non-leaf nodes are made leaves one at a time and the validation score recorded. The best
+        scoring of those nodes matching or exceeding the prior score is prunedy. The iterations
+        repeat until the best performing node cannot match the score of the last iteration's pruned score.
+        
+        Args:
+        * validation (pd.DataFrame): A DataFrame containing instances where each column is a feature.
+            Must contain the target feature/concept as well.
+        * label (str): The name of the column containing the target feature/concept to learn.
+        * data (pd.DataFrame): Any number of DataFrame containing instances where each column is a feature.
+            Must contain the target feature/concept as well.
+        
+        Returns:
+        * The error rate histories of the pruned tree on the validation data and other optional data sets.
+            Of the form of a list of lists of floats. First list is validation errors. Each list begins
+            with the initial error rate before pruning.
         """
         nodes = []           # non-leaf nodes
         stack = [self.root]  # stack of nodes to check
@@ -91,10 +106,16 @@ class DecisionTree:
             for _, child in node.children.items():
                 stack.append(child)
         
-        while True:        
-            score = (self.predict(validation) == validation[label]).sum()
+        scores = []
+        errors = [[] for _ in data]
+        while True:
+            # get score before pruning on this iteration
+            scores.append((self.predict(validation) == validation[label]).sum())
             pruned_scores = np.zeros(len(nodes))
-
+            # get error rates for optional data on this iteration
+            for i, datum in enumerate(data):
+                correct = (self.predict(datum) == datum[label]).sum()
+                errors[i].append(1. - correct / len(datum))
             # iterate over non-leaf nodes, make them leaf to get pruned scores
             for i, node in enumerate(nodes):
                 node.leaf = True
@@ -102,12 +123,14 @@ class DecisionTree:
                 node.leaf = False
             # find best pruned score, if matches original score, prune node
             best = np.argmax(pruned_scores)
-            if best >= score:
+            if best >= scores[-1]:
                 nodes[best].leaf = True
-                nodes.pop(best)
+                nodes.pop(best)  
             # if best pruned score cannot match original score, stop
             else:
-                return 1. - score / len(validation)
+                # combine validation and other error rates
+                errors.insert(0, [1. - s / len(validation) for s in scores])
+                return errors
     
     
     def predict(self, data: pd.DataFrame) -> List[Any]:
