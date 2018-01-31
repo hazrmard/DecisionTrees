@@ -30,6 +30,7 @@ class DecisionTree:
         values = {feature: data[feature].unique() for feature in features}
         stack = [(self.root, features)]
         self.root.instances = data
+        self.root.label = self.root.instances[label].mode().iloc[0]
         
         err_hist = {name:[] for name in validation.keys()}
 
@@ -50,17 +51,17 @@ class DecisionTree:
                 info_gain, optimal_feature, split = self.max_info_gain(node.instances, attrs, label)
                 node.attribute = optimal_feature
                 node.leaf = False
-                node.label = node.instances[label].mode().iloc[0]  # non-leaf label only used during pruning
 
                 # for attribute values with matching instances, add them to stack to calculate information
                 attrs = attrs[attrs != optimal_feature]
                 for feature_value, matching_instances in split:
                     child = Node()
                     child.instances = matching_instances
+                    child.label = child.instances[label].mode().iloc[0]
                     node.children[feature_value] = child
                     stack.append((child, attrs))
 
-                # for attribute values with no matching instnces, create label based on popularity
+                # for attribute values with no matching instances, create label based on popularity
                 left_values = values[optimal_feature][~np.isin(values[optimal_feature], list(split.groups.keys()))]
                 if len(left_values) > 0:
                     mode = node.instances[label].mode().iloc[0]
@@ -146,8 +147,16 @@ class DecisionTree:
         predictions = []
         for _, row in data.iterrows():
             node = self.root
-            while not node.leaf:
-                node = node.children[row[node.attribute]]
+            try:
+                while not node.leaf:
+                    node = node.children[row[node.attribute]]
+            except KeyError:
+                # In case the attribute is not present in the tree, the majority
+                # label of the parent node is assigned as prediction. This error
+                # occurs if the training set does not contain all possible feature
+                # values that occur in the test set, particularly when data are
+                # discretized
+                pass
             predictions.append(node.label)
         return predictions
     
